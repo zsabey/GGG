@@ -1,0 +1,165 @@
+
+R version 4.3.1 (2023-06-16) -- "Beagle Scouts"
+Copyright (C) 2023 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> ##Libraries
+> library(tidyverse)
+── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
+✔ dplyr     1.1.3     ✔ readr     2.1.4
+✔ forcats   1.0.0     ✔ stringr   1.5.0
+✔ ggplot2   3.4.4     ✔ tibble    3.2.1
+✔ lubridate 1.9.3     ✔ tidyr     1.3.0
+✔ purrr     1.0.2     
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+ℹ Use the conflicted package (<http://conflicted.r-lib.org/>) to force all conflicts to become errors
+> library(tidymodels)
+── Attaching packages ────────────────────────────────────── tidymodels 1.1.1 ──
+✔ broom        1.0.5     ✔ rsample      1.2.0
+✔ dials        1.2.0     ✔ tune         1.1.2
+✔ infer        1.0.5     ✔ workflows    1.1.3
+✔ modeldata    1.2.0     ✔ workflowsets 1.0.1
+✔ parsnip      1.1.1     ✔ yardstick    1.2.0
+✔ recipes      1.0.8     
+── Conflicts ───────────────────────────────────────── tidymodels_conflicts() ──
+✖ scales::discard() masks purrr::discard()
+✖ dplyr::filter()   masks stats::filter()
+✖ recipes::fixed()  masks stringr::fixed()
+✖ dplyr::lag()      masks stats::lag()
+✖ yardstick::spec() masks readr::spec()
+✖ recipes::step()   masks stats::step()
+• Dig deeper into tidy modeling with R at https://www.tmwr.org
+> library(keras)
+
+Attaching package: ‘keras’
+
+The following object is masked from ‘package:yardstick’:
+
+    get_weights
+
+> 
+> 
+> trainCsv <- read_csv("train.csv") %>%
++   mutate(type = as.factor(type)) #%>%
+Rows: 371 Columns: 7
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: ","
+chr (2): color, type
+dbl (5): id, bone_length, rotting_flesh, hair_length, has_soul
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+>   #select(-id)
+> 
+> 
+> testCsv <- read_csv("test.csv") #%>%
+Rows: 529 Columns: 6
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: ","
+chr (1): color
+dbl (5): id, bone_length, rotting_flesh, hair_length, has_soul
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+>   #select(-id)
+> 
+> 
+> #Create the recipe and bake it
+> 
+> 
+> 
+> 
+> 
+> nn_recipe <- recipe(type ~., data=trainCsv) %>%
++   update_role(id, new_role="id") %>%
++   step_mutate(color = as.factor(color)) %>%
++   step_dummy(all_nominal_predictors()) %>%  #make dummy variables
++   step_normalize(all_numeric_predictors()) %>% ## Turn color to factor then dummy encode color
++   step_range(all_numeric_predictors(), min=0, max=1) #scale to [0,1]
+> 
+> 
+> prep <- prep(nn_recipe)
+> baked <- bake(prep, new_data = NULL)
+> baked
+# A tibble: 371 × 11
+      id bone_length rotting_flesh hair_length has_soul type   color_blood
+   <dbl>       <dbl>         <dbl>       <dbl>    <dbl> <fct>        <dbl>
+ 1     0       0.388         0.305      0.383     0.833 Ghoul            0
+ 2     1       0.681         0.395      0.459     0.465 Goblin           0
+ 3     2       0.538         0.309      0.782     0.844 Ghoul            0
+ 4     4       0.947         0.494      0.580     0.945 Ghoul            0
+ 5     5       0.668         0.932      0.328     0.677 Ghost            0
+ 6     7       0.456         0.188      0.355     0.292 Goblin           0
+ 7     8       0.448         0.566      0.559     0.495 Goblin           0
+ 8    11       0.602         0.527      0.553     0.495 Ghoul            0
+ 9    12       0.335         0.688      0.327     0.235 Ghost            0
+10    19       0.291         0.724      0.0520    0.142 Ghost            0
+# ℹ 361 more rows
+# ℹ 4 more variables: color_blue <dbl>, color_clear <dbl>, color_green <dbl>,
+#   color_white <dbl>
+> 
+> 
+> 
+> nn_model <- mlp(hidden_units = tune(),
++                 epochs = 50, #or 100 or 250
++                 activation="relu") %>%
++   set_engine("keras", verbose=0) %>% #verbose = 0 prints off less
++   set_mode("classification")
+> 
+> nn_wf <- workflow() %>%
++   add_recipe(nn_recipe) %>%
++   add_model(nn_model)
+> 
+> 
+> 
+> nn_tuneGrid <- grid_regular(hidden_units(range=c(1, 5)),
++                             levels=5)
+> 
+> ## Set up K-fold CV
+> folds <- vfold_cv(trainCsv, v = 3, repeats=1)
+> 
+> ## Run the CV
+> CV_results <- nn_wf %>%
++   tune_grid(resamples=folds,
++             grid=nn_tuneGrid,
++             metrics=metric_set(accuracy)) #Or leave metrics NULL
+2023-11-08 13:06:28.446305: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2023-11-08 13:06:34.510910: I tensorflow/core/common_runtime/process_util.cc:146] Creating new thread pool with default inter op setting: 2. Tune using inter_op_parallelism_threads for best performance.
+1/4 [======>.......................] - ETA: 0s4/4 [==============================] - 0s 3ms/step
+1/4 [======>.......................] - ETA: 0s4/4 [==============================] - 0s 6ms/step
+1/4 [======>.......................] - ETA: 0s4/4 [==============================] - 0s 4ms/step
+1/4 [======>.......................] - ETA: 0s4/4 [==============================] - 0s 5ms/step
+1/4 [======>.......................] - ETA: 0s4/4 [==============================] - 0s 11ms/step
+1/4 [======>.......................] - ETA: 0s4/4 [==============================] - ETA: 0s4/4 [==============================] - 0s 17ms/step
+1/4 [======>.......................] - ETA: 0s4/4 [==============================] - 0s 3ms/step
+1/4 [======>.......................] - ETA: 0s4/4 [==============================] - 0s 12ms/step
+1/4 [======>.......................] - ETA: 0s4/4 [==============================] - 0s 5ms/step
+1/4 [======>.......................] - ETA: 0s4/4 [==============================] - 0s 3ms/step
+1/4 [======>.......................] - ETA: 0s4/4 [==============================] - 0s 16ms/step
+1/4 [======>.......................] - ETA: 0s4/4 [==============================] - 0s 5ms/step
+1/4 [======>.......................] - ETA: 0s4/4 [==============================] - 0s 15ms/step
+1/4 [======>.......................] - ETA: 0s4/4 [==============================] - 0s 8ms/step
+1/4 [======>.......................] - ETA: 0s4/4 [==============================] - 0s 5ms/step
+> 
+> tuned_nn %>% collect_metrics() %>%
++  filter(.metric=="accuracy") %>%
++  ggplot(aes(x=hidden_units, y=mean)) + geom_line()
+Error: object 'tuned_nn' not found
+Execution halted
