@@ -1,63 +1,61 @@
-##Libraries
-library(tidyverse)
+library(bonsai)
+library(lightgbm)
 library(tidymodels)
-library(keras)
+library(tidyverse)
+
+##Read in the datasets
 
 trainCsv <- read_csv("train.csv") %>%
   mutate(type = as.factor(type)) #%>%
-  #select(-id)
+#select(-id)
 
 
 testCsv <- read_csv("test.csv") #%>%
-  #select(-id)
+#select(-id)
 
 
 #Create the recipe and bake it
 
 
-
-
-
-nn_recipe <- recipe(type ~., data=trainCsv) %>%
+bart_recipe <- recipe(type ~., data=trainCsv) %>%
   update_role(id, new_role="id") %>%
   step_mutate(color = as.factor(color)) %>%
-  step_dummy(all_nominal_predictors()) %>%  #make dummy variables
-  step_normalize(all_numeric_predictors()) %>% ## Turn color to factor then dummy encode color
-  step_range(all_numeric_predictors(), min=0, max=1) #scale to [0,1]
+  step_dummy(all_nominal_predictors()) %>%  #make   dummy variables
+  step_normalize(all_numeric_predictors())
 
 
-prep <- prep(nn_recipe)
+prep <- prep(bart_recipe)
 baked <- bake(prep, new_data = NULL)
 baked
 
 
 
-nn_model <- mlp(hidden_units = tune(),
-                epochs = 50) %>%
-  set_engine("nnet") %>% #verbose = 0 prints off less
+bart_model <- bart(trees=tune()) %>% # BART figures out depth and learn_rate
+  set_engine("dbarts") %>% # might need to install
   set_mode("classification")
 
-nn_wf <- workflow() %>%
-  add_recipe(nn_recipe) %>%
-  add_model(nn_model)
+
+bart_wf <- workflow() %>%
+  add_recipe(bart_recipe) %>%
+  add_model(bart_model)
 
 
 
-nn_tuneGrid <- grid_regular(hidden_units(range=c(1, 100)),
-                            levels=100)
+bart_tuneGrid <- grid_regular(trees(),
+                               levels=10)
 
 ## Set up K-fold CV
 folds <- vfold_cv(trainCsv, v = 3, repeats=1)
 
 ## Run the CV
-CV_results <- nn_wf %>%
+CV_results <- bart_wf %>%
   tune_grid(resamples=folds,
-            grid=nn_tuneGrid,
+            grid=bart_tuneGrid,
             metrics=metric_set(accuracy)) #Or leave metrics NULL
 
 CV_results %>% collect_metrics() %>%
- filter(.metric=="accuracy") %>%
- ggplot(aes(x=hidden_units, y=mean)) + geom_line()
+  filter(.metric=="accuracy") %>%
+  ggplot(aes(x=trees, y=mean)) + geom_line()
 
 ## CV tune, finalize and predict here and save results
 ## This takes a few min (10 on my laptop) so run it on becker if you want
@@ -72,21 +70,23 @@ bestTune <- CV_results %>%
 bestTune
 
 ## Finalize the Workflow & fit it
-final_wf <- nn_wf %>%
+final_wf <- bart_wf %>%
   finalize_workflow(bestTune) %>%
   fit(data=trainCsv)
 
-nn_predictions <- final_wf %>%
+bart_predictions <- final_wf %>%
   predict(new_data = testCsv,
           type = "class")
 
 
-Sub6 <- nn_predictions %>% 
+Sub7 <- bart_predictions %>% 
   bind_cols(read_csv("test.csv")) %>% 
   select(id,.pred_class) %>%
   rename(Id= id, type = .pred_class)
 
 
-write_csv(Sub6, "nnSubmission.csv")
+#Writes csv
+write_csv(Sub7, "bartSubmission.csv")
+
 
 
