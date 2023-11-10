@@ -88,5 +88,3 @@ Sub7 <- bart_predictions %>%
 #Writes csv
 write_csv(Sub7, "bartSubmission.csv")
 
-
-
